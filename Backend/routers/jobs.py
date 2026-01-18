@@ -1,0 +1,168 @@
+"""Job management router"""
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List, Optional
+import uuid
+from database.postgres import get_db
+from database.mongodb import get_mongo_db
+from database.models import User, Job
+from database.schemas import JobCreate, JobUpdate, JobResponse
+from auth.dependencies import get_current_active_user
+
+router = APIRouter(prefix="/api/v1/jobs", tags=["Jobs"])
+
+
+@router.get("", response_model=List[JobResponse])
+async def list_jobs(
+    skip: int = 0,
+    limit: int = 100,
+    company: Optional[str] = None,
+    title: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """List all jobs with optional filters"""
+    query = db.query(Job)
+    
+    if company:
+        query = query.filter(Job.company.ilike(f"%{company}%"))
+    if title:
+        query = query.filter(Job.title.ilike(f"%{title}%"))
+    
+    jobs = query.offset(skip).limit(limit).all()
+    return jobs
+
+
+@router.post("", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
+async def create_job(
+    job_data: JobCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new job posting"""
+    # Only recruiters and admins can create jobs
+    if current_user.role.value not in ["recruiter", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only recruiters and admins can create jobs"
+        )
+    
+    # Store full job description in MongoDB
+    mongo_db = get_mongo_db()
+    job_desc_id = str(uuid.uuid4())
+    job_desc_doc = {
+        "job_desc_id": job_desc_id,
+        "description": job_data.description,
+        "requirements": job_data.requirements_json,
+        "created_by": current_user.id
+    }
+    mongo_db.job_descriptions.insert_one(job_desc_doc)
+    
+    # Create job in PostgreSQL
+    new_job = Job(
+        title=job_data.title,
+        company=job_data.company,
+        description=job_data.description,
+        location=job_data.location,
+        salary=job_data.salary,
+        requirements_json=job_data.requirements_json,
+        created_by=current_user.id
+    )
+    
+    db.add(new_job)
+    db.commit()
+    db.refresh(new_job)
+    
+    return new_job
+
+
+@router.get("/{job_id}", response_model=JobResponse)
+async def get_job(
+    job_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get job details"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found"
+        )
+    
+    return job
+
+
+@router.put("/{job_id}", response_model=JobResponse)
+async def update_job(
+    job_id: int,
+    job_data: JobUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Update job posting"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found"
+        )
+    
+    # Only creator or admin can update
+    if job.created_by != current_user.id and current_user.role.value != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to update this job"
+        )
+    
+    # Update fields
+    update_data = job_data.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(job, field, value)
+    
+    # Update MongoDB if description changed
+    if job_data.description or job_data.requirements_json:
+        mongo_db = get_mongo_db()
+        job_desc_doc = {
+            "job_desc_id": str(uuid.uuid4()),
+            "description": job.description,
+            "requirements": job.requirements_json,
+            "updated_by": current_user.id
+        }
+        mongo_db.job_descriptions.insert_one(job_desc_doc)
+    
+    db.commit()
+    db.refresh(job)
+    
+    return job
+
+
+@router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_job(
+    job_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Delete job posting"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found"
+        )
+    
+    # Only creator or admin can delete
+    if job.created_by != current_user.id and current_user.role.value != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this job"
+        )
+    
+    db.delete(job)
+    db.commit()
+    
+    return None

@@ -45,4 +45,23 @@ APP_NAME: str = "Campus Connect AI Engine"
 APP_VERSION: str = "1.0.0"
 APP_DESCRIPTION: str = "AI-powered ATS (Applicant Tracking System) and Feedback Generator for Campus Connect"
 
+# Database Configuration
+POSTGRES_URL: str = os.getenv(
+    "POSTGRES_URL",
+    "postgresql://postgres:postgres@localhost:5432/campus_connect"
+)
+MONGODB_URL: str = os.getenv(
+    "MONGODB_URL",
+    "mongodb://localhost:27017/"
+)
+MONGODB_DB_NAME: str = os.getenv("MONGODB_DB_NAME", "campus_connect")
+
+# JWT Configuration
+JWT_SECRET_KEY: str = os.getenv(
+    "JWT_SECRET_KEY",
+    "your-secret-key-change-in-production-use-env-variable"
+)
+JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_EXPIRATION_HOURS: int = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
+
 

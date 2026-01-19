@@ -56,6 +56,17 @@ export interface Application {
   updated_at?: string;
 }
 
+export interface StudentApplication {
+  id: number;
+  job_id: number;
+  job_title: string;
+  company: string;
+  status: string;
+  applied_at: string | null;
+  ats_score: number | null;
+  passed: boolean | null;
+}
+
 export enum ApplicationStatus {
   PENDING = "pending",
   REVIEWING = "reviewing",

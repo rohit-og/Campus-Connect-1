@@ -133,6 +133,21 @@ class ApplicationResponse(BaseModel):
         from_attributes = True
 
 
+class StudentApplicationResponse(BaseModel):
+    """Response schema for student applications with job details"""
+    id: int
+    job_id: int
+    job_title: str
+    company: str
+    status: str
+    applied_at: Optional[str]
+    ats_score: Optional[float]
+    passed: Optional[bool]
+
+    class Config:
+        from_attributes = True
+
+
 # Evaluation Schemas
 class EvaluationResponse(BaseModel):
     id: int

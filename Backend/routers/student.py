@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from database.postgres import get_db
-from database.models import User, Job
+from database.models import User, Job, Candidate, Application, Evaluation
 from database.schemas import (
     JobSearchRequest, JobSearchResponse,
     SkillGapRequest, SkillGapResponse,
     ResumeFeedbackRequest,
-    RejectionInterpretRequest, RejectionInterpretResponse
+    RejectionInterpretRequest, RejectionInterpretResponse,
+    StudentApplicationResponse
 )
 from student_engine import CampusConnectStudentEngine
 from auth.dependencies import get_current_active_user
@@ -143,4 +144,50 @@ async def interpret_rejection(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error interpreting rejection: {str(e)}"
+        )
+
+
+@router.get("/applications", response_model=List[StudentApplicationResponse])
+async def get_my_applications(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get all applications for the current student"""
+    try:
+        # Get candidate profile for the user
+        candidate = db.query(Candidate).filter(Candidate.user_id == current_user.id).first()
+        
+        if not candidate:
+            return []
+        
+        # Get all applications for this candidate
+        applications = db.query(Application).filter(
+            Application.candidate_id == candidate.id
+        ).order_by(Application.applied_at.desc()).all()
+        
+        result = []
+        for app in applications:
+            job = db.query(Job).filter(Job.id == app.job_id).first()
+            
+            # Get evaluation if exists
+            evaluation = db.query(Evaluation).filter(
+                Evaluation.application_id == app.id
+            ).first()
+            
+            result.append(StudentApplicationResponse(
+                id=app.id,
+                job_id=app.job_id,
+                job_title=job.title if job else "Unknown",
+                company=job.company if job else "Unknown",
+                status=app.status.value,
+                applied_at=app.applied_at.isoformat() if app.applied_at else None,
+                ats_score=evaluation.ats_score if evaluation else None,
+                passed=evaluation.passed if evaluation else None,
+            ))
+        
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching applications: {str(e)}"
         )

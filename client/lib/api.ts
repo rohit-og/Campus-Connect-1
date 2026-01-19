@@ -1,4 +1,4 @@
-import { Token, User, ApiError, Job, JobCreate, JobSearchResponse, ATSScoreRequest, ATSScoreResponse, EvaluationResponse, BatchScoreRequest, BatchScoreResponse, Candidate, ChatMessageRequest, ChatMessageResponse } from '@/types/api';
+import { Token, User, ApiError, Job, JobCreate, JobSearchResponse, ATSScoreRequest, ATSScoreResponse, EvaluationResponse, BatchScoreRequest, BatchScoreResponse, Candidate, ChatMessageRequest, ChatMessageResponse, StudentApplication } from '@/types/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -202,6 +202,10 @@ export const studentApi = {
         top_k: topK,
       }),
     });
+  },
+
+  getApplications: async (): Promise<StudentApplication[]> => {
+    return apiRequest<StudentApplication[]>('/api/v1/student/applications');
   },
 };
 

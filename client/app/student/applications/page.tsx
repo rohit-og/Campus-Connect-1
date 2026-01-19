@@ -1,7 +1,11 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FileText, Calendar, CheckCircle, Clock, XCircle } from 'lucide-react';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
+// TODO: Import applications API when available
+// import { applicationsApi } from '@/lib/api';
 
 interface Application {
   id: number;
@@ -13,7 +17,17 @@ interface Application {
 }
 
 export default function ApplicationsPage() {
-  const applications: Application[] = [
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // TODO: Fetch applications from API
+    // fetchApplications();
+    setIsLoading(false);
+  }, []);
+
+  // Mock data - will be replaced with API call
+  const mockApplications: Application[] = [
     {
       id: 1,
       jobTitle: 'Frontend Developer',
@@ -52,6 +66,10 @@ export default function ApplicationsPage() {
     },
   ];
 
+  useEffect(() => {
+    setApplications(mockApplications);
+  }, []);
+
   const getStatusBadge = (status: Application['status']) => {
     const badges = {
       pending: { icon: Clock, color: 'badge-warning', text: 'Pending' },
@@ -64,7 +82,8 @@ export default function ApplicationsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <ProtectedRoute requiredRole="student">
+      <div className="space-y-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -189,6 +208,7 @@ export default function ApplicationsPage() {
           );
         })}
       </div>
-    </div>
+      </div>
+    </ProtectedRoute>
   );
 }

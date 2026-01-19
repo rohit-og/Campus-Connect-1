@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import StatCard from '@/components/ui/StatCard';
 import JobCard from '@/components/ui/JobCard';
@@ -9,72 +10,85 @@ import SkillBar from '@/components/student/SkillBar';
 import StudentJobCard from '@/components/student/StudentJobCard';
 import { FileText, Calendar, Eye, TrendingUp, Briefcase, Search, Flame } from 'lucide-react';
 import Link from 'next/link';
-
-// Mock data
-const profileData = {
-  sid: 'STU2024001',
-  name: 'John Doe',
-  email: 'john.doe@example.com',
-  phone: '+91 98765 43210',
-  college: 'ABC University',
-  branch: 'Computer Science',
-  year: 'Final Year',
-  graduationYear: '2024',
-  location: 'Bangalore, India',
-  cgpa: '8.5',
-  resume: {
-    name: 'John_Doe_Resume.pdf',
-    url: '#',
-  },
-  isVerified: true,
-  profileCompletion: 85,
-};
-
-const recommendedJobs = [
-  {
-    id: 1,
-    company: 'Tech Corp',
-    role: 'Software Engineer',
-    match: '95%',
-    location: 'Bangalore, India',
-    type: 'Full-time',
-    salary: '₹8-12 LPA',
-  },
-  {
-    id: 2,
-    company: 'InnovateLabs',
-    role: 'Frontend Developer',
-    match: '88%',
-    location: 'Remote',
-    type: 'Full-time',
-    salary: '₹6-10 LPA',
-  },
-  {
-    id: 3,
-    company: 'DataSystems',
-    role: 'ML Engineer',
-    match: '82%',
-    location: 'Hyderabad, India',
-    type: 'Full-time',
-    salary: '₹10-15 LPA',
-  },
-];
+import { useAuth } from '@/contexts/AuthContext';
+import { jobsApi, authApi } from '@/lib/api';
+import { Job } from '@/types/api';
+import { handleApiError } from '@/lib/errors';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
 export default function StudentDashboard() {
+  const { user } = useAuth();
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   const currentStreak = 5;
   const longestStreak = 12;
   const solvedToday = false;
-  const jobMatchesCount = recommendedJobs.length;
+  const jobMatchesCount = jobs.length;
+
+  useEffect(() => {
+    fetchJobs();
+  }, []);
+
+  const fetchJobs = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const fetchedJobs = await jobsApi.list(0, 6);
+      setJobs(fetchedJobs);
+    } catch (err) {
+      setError(handleApiError(err));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Mock profile data - will be replaced when profile API is available
+  const profileData = {
+    sid: user?.id.toString() || 'STU2024001',
+    name: user?.email.split('@')[0] || 'Student',
+    email: user?.email || '',
+    phone: '+91 98765 43210',
+    college: 'ABC University',
+    branch: 'Computer Science',
+    year: 'Final Year',
+    graduationYear: '2024',
+    location: 'Bangalore, India',
+    cgpa: '8.5',
+    resume: {
+      name: 'Resume.pdf',
+      url: '#',
+    },
+    isVerified: true,
+    profileCompletion: 85,
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return '1 day ago';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+    return `${Math.floor(diffDays / 30)} months ago`;
+  };
 
   return (
-    <div className="space-y-8">
+    <ProtectedRoute requiredRole="student">
+      <div className="space-y-8">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <h1 className="text-3xl sm:text-4xl font-bold text-base-content mb-2">Welcome back, Student!</h1>
+        <h1 className="text-3xl sm:text-4xl font-bold text-base-content mb-2">
+          Welcome back, {user?.email.split('@')[0] || 'Student'}!
+        </h1>
         <p className="text-base-content/70">Here's your job hunting overview</p>
       </motion.div>
 
@@ -128,15 +142,36 @@ export default function StudentDashboard() {
               <Search className="w-5 h-5" />
               AI Recommended Jobs
             </h3>
-            <div className="space-y-3">
-              {recommendedJobs.map((job, index) => (
-                <StudentJobCard 
-                  key={job.id}
-                  job={job}
-                  delay={0.1 * index}
-                />
-              ))}
-            </div>
+            {isLoading ? (
+              <div className="flex justify-center py-4">
+                <span className="loading loading-spinner"></span>
+              </div>
+            ) : error ? (
+              <div className="alert alert-error">
+                <span>{error}</span>
+              </div>
+            ) : jobs.length === 0 ? (
+              <p className="text-base-content/70">No recommended jobs at the moment.</p>
+            ) : (
+              <div className="space-y-3">
+                {jobs.slice(0, 3).map((job, index) => (
+                  <div key={job.id} onClick={() => window.location.href = `/student/jobs/${job.id}`} className="cursor-pointer">
+                    <StudentJobCard 
+                      job={{
+                        id: job.id,
+                        company: job.company,
+                        role: job.title,
+                        match: '85%',
+                        location: job.location || 'Not specified',
+                        type: job.salary || 'Full-time',
+                        salary: job.salary || 'Not specified',
+                      }}
+                      delay={0.1 * index}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </motion.div>
       </div>
@@ -226,36 +261,42 @@ export default function StudentDashboard() {
             View All
           </Link>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <JobCard
-            title="Frontend Developer"
-            company="Tech Innovations Inc."
-            location="San Francisco, CA"
-            type="Full-time"
-            posted="2 days ago"
-            description="We're looking for a talented frontend developer to join our team. Experience with React and TypeScript required."
-            delay={0.1}
-          />
-          <JobCard
-            title="Software Engineer"
-            company="Cloud Solutions"
-            location="Remote"
-            type="Full-time"
-            posted="5 days ago"
-            description="Join our growing engineering team. Work on cutting-edge cloud technologies and scalable systems."
-            delay={0.2}
-          />
-          <JobCard
-            title="UI/UX Designer"
-            company="Creative Studio"
-            location="New York, NY"
-            type="Contract"
-            posted="1 week ago"
-            description="Looking for a creative designer to help shape our product's user experience and visual design."
-            delay={0.3}
-          />
-        </div>
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <span className="loading loading-spinner loading-lg"></span>
+          </div>
+        ) : error ? (
+          <div className="alert alert-error">
+            <span>{error}</span>
+            <button onClick={fetchJobs} className="btn btn-sm btn-ghost">Retry</button>
+          </div>
+        ) : jobs.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-base-content/70">No jobs available at the moment.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {jobs.map((job, index) => (
+              <div
+                key={job.id}
+                onClick={() => window.location.href = `/student/jobs/${job.id}`}
+                className="cursor-pointer"
+              >
+                <JobCard
+                  title={job.title}
+                  company={job.company}
+                  location={job.location || 'Not specified'}
+                  type={job.salary || 'Full-time'}
+                  posted={formatDate(job.created_at)}
+                  description={job.description || ''}
+                  delay={index * 0.1}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </motion.div>
-    </div>
+      </div>
+    </ProtectedRoute>
   );
 }

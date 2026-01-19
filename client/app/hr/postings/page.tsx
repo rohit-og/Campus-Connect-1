@@ -1,8 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Edit, Trash2, Eye, Briefcase, MapPin, Clock } from 'lucide-react';
+import { jobsApi } from '@/lib/api';
+import { Job } from '@/types/api';
+import { handleApiError } from '@/lib/errors';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
 interface JobPosting {
   id: number;
@@ -16,44 +20,76 @@ interface JobPosting {
 
 export default function PostingsPage() {
   const [showModal, setShowModal] = useState(false);
-  const [postings] = useState<JobPosting[]>([
-    {
-      id: 1,
-      title: 'Frontend Developer',
-      location: 'San Francisco, CA',
-      type: 'Full-time',
-      status: 'active',
-      applications: 24,
-      postedDate: '2024-01-10',
-    },
-    {
-      id: 2,
-      title: 'Software Engineer',
-      location: 'Remote',
-      type: 'Full-time',
-      status: 'active',
-      applications: 18,
-      postedDate: '2024-01-08',
-    },
-    {
-      id: 3,
-      title: 'UI/UX Designer',
-      location: 'New York, NY',
-      type: 'Contract',
-      status: 'draft',
-      applications: 0,
-      postedDate: '2024-01-12',
-    },
-    {
-      id: 4,
-      title: 'Backend Developer',
-      location: 'Austin, TX',
-      type: 'Full-time',
-      status: 'closed',
-      applications: 45,
-      postedDate: '2024-01-05',
-    },
-  ]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [newJob, setNewJob] = useState({
+    title: '',
+    location: '',
+    type: 'Full-time',
+    description: '',
+  });
+
+  useEffect(() => {
+    fetchJobs();
+  }, []);
+
+  const fetchJobs = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const fetchedJobs = await jobsApi.list(0, 100);
+      setJobs(fetchedJobs);
+    } catch (err) {
+      setError(handleApiError(err));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Convert jobs to postings format
+  const postings: JobPosting[] = jobs.map((job) => ({
+    id: job.id,
+    title: job.title,
+    location: job.location || 'Not specified',
+    type: job.salary || 'Full-time',
+    status: 'active' as const,
+    applications: 0, // TODO: Get from applications API
+    postedDate: job.created_at,
+  }));
+
+  const handleCreateJob = async () => {
+    if (!newJob.title || !newJob.description) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    try {
+      await jobsApi.create({
+        title: newJob.title,
+        company: 'Your Company', // TODO: Get from user profile
+        location: newJob.location,
+        description: newJob.description,
+        salary: newJob.type,
+        requirements_json: {},
+      });
+      setShowModal(false);
+      setNewJob({ title: '', location: '', type: 'Full-time', description: '' });
+      fetchJobs();
+    } catch (err) {
+      alert('Failed to create job: ' + handleApiError(err));
+    }
+  };
+
+  const handleDeleteJob = async (jobId: number) => {
+    if (confirm('Are you sure you want to delete this job posting?')) {
+      try {
+        await jobsApi.delete(jobId);
+        fetchJobs();
+      } catch (err) {
+        alert('Failed to delete job: ' + handleApiError(err));
+      }
+    }
+  };
 
   const getStatusBadge = (status: JobPosting['status']) => {
     const badges = {
@@ -65,7 +101,8 @@ export default function PostingsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <ProtectedRoute requiredRole="hr">
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <motion.div
@@ -88,9 +125,30 @@ export default function PostingsPage() {
         </motion.button>
       </div>
 
+      {/* Error Message */}
+      {error && (
+        <div className="alert alert-error">
+          <span>{error}</span>
+          <button onClick={fetchJobs} className="btn btn-sm btn-ghost">Retry</button>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {isLoading && (
+        <div className="flex justify-center py-12">
+          <span className="loading loading-spinner loading-lg"></span>
+        </div>
+      )}
+
       {/* Postings Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {postings.map((posting, index) => (
+      {!isLoading && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {postings.length === 0 ? (
+            <div className="col-span-full text-center py-12">
+              <p className="text-base-content/70">No job postings yet. Create your first one!</p>
+            </div>
+          ) : (
+            postings.map((posting, index) => (
           <motion.div
             key={posting.id}
             initial={{ opacity: 0, y: 20 }}
@@ -132,14 +190,19 @@ export default function PostingsPage() {
                 <button className="btn btn-ghost btn-sm">
                   <Edit className="w-4 h-4" />
                 </button>
-                <button className="btn btn-ghost btn-sm text-error">
+                <button 
+                  className="btn btn-ghost btn-sm text-error"
+                  onClick={() => handleDeleteJob(posting.id)}
+                >
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
             </div>
           </motion.div>
-        ))}
-      </div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Create Posting Modal */}
       {showModal && (
@@ -151,19 +214,33 @@ export default function PostingsPage() {
                 <label className="label">
                   <span className="label-text">Job Title</span>
                 </label>
-                <input type="text" className="input input-bordered w-full" />
+                <input 
+                  type="text" 
+                  className="input input-bordered w-full"
+                  value={newJob.title}
+                  onChange={(e) => setNewJob({ ...newJob, title: e.target.value })}
+                />
               </div>
               <div>
                 <label className="label">
                   <span className="label-text">Location</span>
                 </label>
-                <input type="text" className="input input-bordered w-full" />
+                <input 
+                  type="text" 
+                  className="input input-bordered w-full"
+                  value={newJob.location}
+                  onChange={(e) => setNewJob({ ...newJob, location: e.target.value })}
+                />
               </div>
               <div>
                 <label className="label">
                   <span className="label-text">Job Type</span>
                 </label>
-                <select className="select select-bordered w-full">
+                <select 
+                  className="select select-bordered w-full"
+                  value={newJob.type}
+                  onChange={(e) => setNewJob({ ...newJob, type: e.target.value })}
+                >
                   <option>Full-time</option>
                   <option>Part-time</option>
                   <option>Contract</option>
@@ -174,20 +251,34 @@ export default function PostingsPage() {
                 <label className="label">
                   <span className="label-text">Description</span>
                 </label>
-                <textarea className="textarea textarea-bordered w-full h-32" />
+                <textarea 
+                  className="textarea textarea-bordered w-full h-32"
+                  value={newJob.description}
+                  onChange={(e) => setNewJob({ ...newJob, description: e.target.value })}
+                />
               </div>
             </div>
             <div className="modal-action">
-              <button onClick={() => setShowModal(false)} className="btn btn-ghost">
+              <button 
+                onClick={() => {
+                  setShowModal(false);
+                  setNewJob({ title: '', location: '', type: 'Full-time', description: '' });
+                }} 
+                className="btn btn-ghost"
+              >
                 Cancel
               </button>
-              <button onClick={() => setShowModal(false)} className="btn btn-primary">
+              <button 
+                onClick={handleCreateJob}
+                className="btn btn-primary"
+              >
                 Create Posting
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </ProtectedRoute>
   );
 }

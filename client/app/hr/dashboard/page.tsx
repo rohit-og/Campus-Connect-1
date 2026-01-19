@@ -1,9 +1,15 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import StatCard from '@/components/ui/StatCard';
 import { FileText, Users, Briefcase, TrendingUp, Plus } from 'lucide-react';
 import Link from 'next/link';
+import { useAuth } from '@/contexts/AuthContext';
+import { jobsApi } from '@/lib/api';
+import { Job } from '@/types/api';
+import { handleApiError } from '@/lib/errors';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
 interface Application {
   id: number;
@@ -14,6 +20,29 @@ interface Application {
 }
 
 export default function HRDashboard() {
+  const { user } = useAuth();
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchJobs();
+  }, []);
+
+  const fetchJobs = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const fetchedJobs = await jobsApi.list(0, 100);
+      setJobs(fetchedJobs);
+    } catch (err) {
+      setError(handleApiError(err));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Mock applications - will be replaced when applications API is available
   const recentApplications: Application[] = [
     {
       id: 1,
@@ -39,7 +68,8 @@ export default function HRDashboard() {
   ];
 
   return (
-    <div className="space-y-8">
+    <ProtectedRoute requiredRole="hr">
+      <div className="space-y-8">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -54,7 +84,7 @@ export default function HRDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Active Postings"
-          value={12}
+          value={isLoading ? 0 : jobs.length}
           icon={Briefcase}
           color="primary"
           delay={0.1}
@@ -153,6 +183,7 @@ export default function HRDashboard() {
           </div>
         </div>
       </motion.div>
-    </div>
+      </div>
+    </ProtectedRoute>
   );
 }

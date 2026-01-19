@@ -1,8 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Filter, User, Briefcase, MapPin, Star, Download } from 'lucide-react';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
+// TODO: Import candidates API when available
+// import { candidatesApi } from '@/lib/api';
 
 interface Candidate {
   id: number;
@@ -18,7 +21,17 @@ interface Candidate {
 
 export default function CandidatesPage() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [candidates] = useState<Candidate[]>([
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // TODO: Fetch candidates from API
+    // fetchCandidates();
+    setIsLoading(false);
+  }, []);
+
+  // Mock data - will be replaced with API call
+  const mockCandidates: Candidate[] = [
     {
       id: 1,
       name: 'John Doe',
@@ -63,10 +76,15 @@ export default function CandidatesPage() {
       appliedFor: 'Backend Developer',
       appliedDate: '2024-01-12',
     },
-  ]);
+  ];
+
+  useEffect(() => {
+    setCandidates(mockCandidates);
+  }, []);
 
   return (
-    <div className="space-y-6">
+    <ProtectedRoute requiredRole="hr">
+      <div className="space-y-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -170,6 +188,7 @@ export default function CandidatesPage() {
           </motion.div>
         ))}
       </div>
-    </div>
+      </div>
+    </ProtectedRoute>
   );
 }

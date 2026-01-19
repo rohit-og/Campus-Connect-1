@@ -1,29 +1,78 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Building2, Mail, Phone, MapPin, Globe, Save, User } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { authApi } from '@/lib/api';
+import { handleApiError } from '@/lib/errors';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 
 export default function HRProfilePage() {
+  const { user, refreshUser } = useAuth();
   const [formData, setFormData] = useState({
-    companyName: 'Tech Innovations Inc.',
-    email: 'hr@techinnovations.com',
-    phone: '+1 234 567 8900',
-    location: 'San Francisco, CA',
-    website: 'www.techinnovations.com',
-    description: 'A leading technology company focused on innovation and excellence. We are committed to building a diverse and inclusive workforce.',
+    companyName: '',
+    email: '',
+    phone: '',
+    location: '',
+    website: '',
+    description: '',
     industry: 'Technology',
     companySize: '100-500',
   });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Handle form submission
-    alert('Profile updated successfully!');
+  useEffect(() => {
+    fetchUserData();
+  }, []);
+
+  const fetchUserData = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const userData = await authApi.getMe();
+      setFormData({
+        companyName: '',
+        email: userData.email,
+        phone: '',
+        location: '',
+        website: '',
+        description: '',
+        industry: 'Technology',
+        companySize: '100-500',
+      });
+    } catch (err) {
+      setError(handleApiError(err));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // TODO: Implement profile update API call
+    try {
+      await refreshUser();
+      alert('Profile updated successfully!');
+    } catch (err) {
+      alert('Failed to update profile: ' + handleApiError(err));
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <ProtectedRoute requiredRole="hr">
+        <div className="flex justify-center items-center py-12">
+          <span className="loading loading-spinner loading-lg"></span>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <ProtectedRoute requiredRole="hr">
+      <div className="space-y-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -231,6 +280,7 @@ export default function HRProfilePage() {
           </button>
         </motion.div>
       </form>
-    </div>
+      </div>
+    </ProtectedRoute>
   );
 }

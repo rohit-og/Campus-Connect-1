@@ -5,13 +5,17 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { GraduationCap, Building2, Mail, Lock } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { handleApiError } from '@/lib/errors';
+import { UserRole } from '@/types/api';
 
 export default function LoginPage() {
-  const [role, setRole] = useState<'student' | 'hr'>('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const { login, user } = useAuth();
 
   const validate = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -29,11 +33,37 @@ export default function LoginPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validate()) {
-      // Navigate to appropriate dashboard
-      router.push(`/${role}/dashboard`);
+    setErrors({});
+    
+    if (!validate()) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await login(email, password);
+      // Redirect based on user role
+      if (user) {
+        if (user.role === UserRole.STUDENT) {
+          router.push('/student/dashboard');
+        } else if (user.role === UserRole.RECRUITER) {
+          router.push('/hr/dashboard');
+        } else {
+          router.push('/student/dashboard');
+        }
+      } else {
+        // Wait a bit for user to be set, then redirect
+        setTimeout(() => {
+          router.push('/student/dashboard');
+        }, 100);
+      }
+    } catch (error) {
+      const errorMessage = handleApiError(error);
+      setErrors({ general: errorMessage });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -60,27 +90,12 @@ export default function LoginPage() {
             <p className="text-base-content/70">Sign in to Campus Connect</p>
           </div>
 
-          {/* Role Selection */}
-          <div className="flex gap-2 mb-6">
-            <button
-              onClick={() => setRole('student')}
-              className={`flex-1 btn ${
-                role === 'student' ? 'btn-primary' : 'btn-outline'
-              }`}
-            >
-              <GraduationCap className="w-5 h-5 mr-2" />
-              Student
-            </button>
-            <button
-              onClick={() => setRole('hr')}
-              className={`flex-1 btn ${
-                role === 'hr' ? 'btn-secondary' : 'btn-outline'
-              }`}
-            >
-              <Building2 className="w-5 h-5 mr-2" />
-              HR
-            </button>
-          </div>
+          {/* Error Message */}
+          {errors.general && (
+            <div className="alert alert-error mb-4">
+              <span>{errors.general}</span>
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -140,8 +155,19 @@ export default function LoginPage() {
               </Link>
             </div>
 
-            <button type="submit" className="btn btn-primary w-full mt-6">
-              Sign In
+            <button 
+              type="submit" 
+              className="btn btn-primary w-full mt-6"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <span className="loading loading-spinner loading-sm"></span>
+                  Signing in...
+                </>
+              ) : (
+                'Sign In'
+              )}
             </button>
           </form>
 
@@ -149,7 +175,7 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-base-content/70">
             Don't have an account?{' '}
-            <Link href="/register" className="link link-primary font-semibold">
+            <Link href="/auth/register" className="link link-primary font-semibold">
               Sign up
             </Link>
           </p>

@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { GraduationCap, Building2, Mail, Lock, User, Phone } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { handleApiError } from '@/lib/errors';
+import { UserRole } from '@/types/api';
 
 export default function RegisterPage() {
   const [role, setRole] = useState<'student' | 'hr'>('student');
@@ -17,23 +20,17 @@ export default function RegisterPage() {
     company: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const { register, user } = useAuth();
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
-    
-    if (!formData.name) {
-      newErrors.name = 'Name is required';
-    }
     
     if (!formData.email) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = 'Email is invalid';
-    }
-    
-    if (!formData.phone) {
-      newErrors.phone = 'Phone is required';
     }
     
     if (!formData.password) {
@@ -46,19 +43,40 @@ export default function RegisterPage() {
       newErrors.confirmPassword = 'Passwords do not match';
     }
     
-    if (role === 'hr' && !formData.company) {
-      newErrors.company = 'Company name is required';
-    }
-    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validate()) {
-      // Navigate to appropriate dashboard
-      router.push(`/${role}/dashboard`);
+    setErrors({});
+    
+    if (!validate()) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await register(formData.email, formData.password, role);
+      // Auto-login will redirect, but we can also redirect here
+      if (user) {
+        if (user.role === UserRole.STUDENT) {
+          router.push('/student/dashboard');
+        } else if (user.role === UserRole.RECRUITER) {
+          router.push('/hr/dashboard');
+        } else {
+          router.push('/student/dashboard');
+        }
+      } else {
+        setTimeout(() => {
+          router.push('/student/dashboard');
+        }, 100);
+      }
+    } catch (error) {
+      const errorMessage = handleApiError(error);
+      setErrors({ general: errorMessage });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -115,30 +133,15 @@ export default function RegisterPage() {
             </button>
           </div>
 
+          {/* Error Message */}
+          {errors.general && (
+            <div className="alert alert-error mb-4">
+              <span>{errors.general}</span>
+            </div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="label">
-                <span className="label-text">Full Name</span>
-              </label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-base-content/50" />
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => handleChange('name', e.target.value)}
-                  placeholder="John Doe"
-                  className={`input input-bordered w-full pl-10 ${
-                    errors.name ? 'input-error' : ''
-                  }`}
-                />
-              </div>
-              {errors.name && (
-                <label className="label">
-                  <span className="label-text-alt text-error">{errors.name}</span>
-                </label>
-              )}
-            </div>
 
             {role === 'hr' && (
               <div>
@@ -188,28 +191,6 @@ export default function RegisterPage() {
               )}
             </div>
 
-            <div>
-              <label className="label">
-                <span className="label-text">Phone</span>
-              </label>
-              <div className="relative">
-                <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-base-content/50" />
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => handleChange('phone', e.target.value)}
-                  placeholder="+1 234 567 8900"
-                  className={`input input-bordered w-full pl-10 ${
-                    errors.phone ? 'input-error' : ''
-                  }`}
-                />
-              </div>
-              {errors.phone && (
-                <label className="label">
-                  <span className="label-text-alt text-error">{errors.phone}</span>
-                </label>
-              )}
-            </div>
 
             <div>
               <label className="label">
@@ -257,8 +238,19 @@ export default function RegisterPage() {
               )}
             </div>
 
-            <button type="submit" className="btn btn-primary w-full mt-6">
-              Create Account
+            <button 
+              type="submit" 
+              className="btn btn-primary w-full mt-6"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <span className="loading loading-spinner loading-sm"></span>
+                  Creating account...
+                </>
+              ) : (
+                'Create Account'
+              )}
             </button>
           </form>
 
@@ -266,7 +258,7 @@ export default function RegisterPage() {
 
           <p className="text-center text-sm text-base-content/70">
             Already have an account?{' '}
-            <Link href="/login" className="link link-primary font-semibold">
+            <Link href="/auth/login" className="link link-primary font-semibold">
               Sign in
             </Link>
           </p>

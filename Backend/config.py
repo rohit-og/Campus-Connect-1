@@ -4,6 +4,10 @@ Configuration settings for Campus Connect AI Engine
 
 import os
 from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # API Configuration
 API_HOST: str = os.getenv("API_HOST", "0.0.0.0")

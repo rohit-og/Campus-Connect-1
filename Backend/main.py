@@ -15,7 +15,7 @@ from config import (
     CORS_ORIGINS, UPLOAD_DIR
 )
 from database.postgres import engine, Base
-from database.mongodb import mongo_client
+# MongoDB client will be imported where needed to handle None case
 
 # Import routers
 from routers import auth, resume, ats, feedback, student, jobs, candidates
@@ -56,8 +56,13 @@ async def startup_event():
         os.makedirs(UPLOAD_DIR)
         print(f"Created {UPLOAD_DIR} directory")
     
-    # Create database tables (in production, use Alembic migrations)
-    # Base.metadata.create_all(bind=engine)
+    # Create database tables if they don't exist
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("Database tables created/verified")
+    except Exception as e:
+        print(f"Warning: Could not create database tables: {e}")
+        print("You may need to run migrations manually: alembic upgrade head")
     
     print("="*60)
     print(f"{APP_NAME} - Starting Server")
@@ -69,8 +74,13 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Close database connections on shutdown"""
-    mongo_client.close()
-    print("Database connections closed")
+    if mongo_client is not None:
+        try:
+            mongo_client.close()
+            print("MongoDB connection closed")
+        except:
+            pass
+    print("Shutdown complete")
 
 
 @app.get("/")
@@ -97,34 +107,52 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    postgres_status = "unknown"
+    mongodb_status = "unknown"
+    
     try:
         # Check PostgreSQL connection
         from database.postgres import SessionLocal
         from sqlalchemy import text
         db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
-        postgres_status = "connected"
+        try:
+            db.execute(text("SELECT 1"))
+            postgres_status = "connected"
+        except Exception as e:
+            postgres_status = f"error: {str(e)[:100]}"
+        finally:
+            db.close()
     except Exception as e:
-        postgres_status = f"error: {str(e)}"
+        postgres_status = f"error: {str(e)[:100]}"
     
     try:
         # Check MongoDB connection
-        from database.mongodb import get_mongo_db
-        mongo_db = get_mongo_db()
-        mongo_db.command("ping")
-        mongodb_status = "connected"
+        from database.mongodb import mongo_client
+        if mongo_client is not None:
+            mongo_client.server_info()
+            mongodb_status = "connected"
+        else:
+            mongodb_status = "not initialized"
     except Exception as e:
-        mongodb_status = f"error: {str(e)}"
+        mongodb_status = f"error: {str(e)[:100]}"
+    
+    # Determine overall status
+    if postgres_status == "connected" and mongodb_status == "connected":
+        overall_status = "healthy"
+    elif postgres_status == "connected" or mongodb_status == "connected":
+        overall_status = "degraded"
+    else:
+        overall_status = "unavailable"
     
     return {
-        "status": "healthy" if postgres_status == "connected" and mongodb_status == "connected" else "degraded",
+        "status": overall_status,
         "timestamp": datetime.now().isoformat(),
         "service": APP_NAME,
         "databases": {
             "postgresql": postgres_status,
             "mongodb": mongodb_status
-        }
+        },
+        "message": "API is running. Some features may be unavailable if databases are not connected."
     }
 
 

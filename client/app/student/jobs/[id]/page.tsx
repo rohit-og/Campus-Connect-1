@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import Link from 'next/link';
 import SkillGapCard from '@/components/student/SkillGapCard';
 import { jobsApi, messagesApi } from '@/lib/api';
 import { Job } from '@/types/api';

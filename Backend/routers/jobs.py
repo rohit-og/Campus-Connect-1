@@ -4,13 +4,68 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
+
 from database.postgres import get_db
 from database.mongodb import get_mongo_db
 from database.models import User, Job, Application
 from database.schemas import JobCreate, JobUpdate, JobResponse
 from auth.dependencies import get_current_active_user
+from config import USE_QDRANT_MATCHING, QDRANT_COLLECTION_JOBS
+from vector.embedder import get_embedder
+from vector.qdrant_client import ensure_collections, upsert_points
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["Jobs"])
+
+
+def _build_job_vector_text_and_payload(job: Job) -> tuple[str, dict]:
+    """Construct the text representation and payload for a job for vector search."""
+    requirements = job.requirements_json or {}
+    required_skills = requirements.get("required_skills") or []
+    job_description = requirements.get("job_description") or ""
+
+    text_parts = [
+        job.title or "",
+        job.company or "",
+        job.description or "",
+        job_description or "",
+        ", ".join(required_skills),
+    ]
+    full_text = " ".join(part for part in text_parts if part)
+
+    payload = {
+        "job_id": job.id,
+        "title": job.title,
+        "company": job.company,
+        "location": job.location,
+        "salary": job.salary,
+        "required_skills": required_skills,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+    }
+    return full_text, payload
+
+
+def _index_job_in_qdrant(job: Job) -> None:
+    """Index or update a single job in the Qdrant collection."""
+    if not USE_QDRANT_MATCHING:
+        return
+
+    try:
+        embedder = get_embedder()
+        text, payload = _build_job_vector_text_and_payload(job)
+        if not text:
+            return
+
+        vector = embedder.embed_text(text)
+        ensure_collections(embedder.dimension)
+        upsert_points(
+            collection=QDRANT_COLLECTION_JOBS,
+            ids=[str(job.id)],
+            vectors=[vector],
+            payloads=[payload],
+        )
+    except Exception as e:
+        # Indexing failures should not break core job flows
+        print(f"[QDRANT] Failed to index job {job.id}: {e}")
 
 
 @router.get("", response_model=List[JobResponse])
@@ -93,7 +148,10 @@ async def create_job(
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
-    
+
+    # Best-effort index in Qdrant for semantic search
+    _index_job_in_qdrant(new_job)
+
     return new_job
 
 
@@ -172,7 +230,10 @@ async def update_job(
     
     db.commit()
     db.refresh(job)
-    
+
+    # Best-effort re-index in Qdrant when job changes
+    _index_job_in_qdrant(job)
+
     return job
 
 

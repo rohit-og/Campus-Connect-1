@@ -5,13 +5,20 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import os
 import uuid
+
 from database.postgres import get_db
 from database.mongodb import get_mongo_db
 from database.schemas import ResumeParseRequest, ResumeParseResponse
 from resume_parser import ResumeParser
 from auth.dependencies import get_current_active_user
-from database.models import User
-from config import UPLOAD_DIR, ALLOWED_EXTENSIONS
+from database.models import User, Candidate
+from config import (
+    UPLOAD_DIR,
+    ALLOWED_EXTENSIONS,
+    USE_LLM_RESUME_ENRICH,
+    USE_LLM_RESUME_ENRICH_UPDATE_CANDIDATE,
+)
+from llm.resume_enricher import enrich_resume
 
 router = APIRouter(prefix="/api/v1/resume", tags=["Resume"])
 
@@ -39,7 +46,23 @@ async def parse_resume(
     try:
         # Parse resume
         parsed_data = resume_parser.parse(resume_text=request.resume_text)
-        
+
+        # Optional LLM-based enrichment
+        if USE_LLM_RESUME_ENRICH:
+            enriched = enrich_resume(parsed_data)
+            if enriched:
+                parsed_data["enriched"] = enriched
+
+                # Optionally merge normalized skills into candidate profile
+                if USE_LLM_RESUME_ENRICH_UPDATE_CANDIDATE:
+                    normalized_skills = enriched.get("normalized_skills") or []
+                    if normalized_skills:
+                        candidate = db.query(Candidate).filter(Candidate.user_id == current_user.id).first()
+                        if candidate:
+                            existing_skills = candidate.skills_json or []
+                            merged = sorted({s.strip() for s in (existing_skills + normalized_skills) if s})
+                            candidate.skills_json = merged
+                            db.commit()
         # Store in MongoDB
         mongo_db = get_mongo_db()
         resume_id = str(uuid.uuid4())
@@ -93,7 +116,24 @@ async def upload_resume(
         
         # Parse resume
         parsed_data = resume_parser.parse(file_path=file_path)
-        
+
+        # Optional LLM-based enrichment
+        if USE_LLM_RESUME_ENRICH:
+            enriched = enrich_resume(parsed_data)
+            if enriched:
+                parsed_data["enriched"] = enriched
+
+                # Optionally merge normalized skills into candidate profile
+                if USE_LLM_RESUME_ENRICH_UPDATE_CANDIDATE:
+                    normalized_skills = enriched.get("normalized_skills") or []
+                    if normalized_skills:
+                        candidate = db.query(Candidate).filter(Candidate.user_id == current_user.id).first()
+                        if candidate:
+                            existing_skills = candidate.skills_json or []
+                            merged = sorted({s.strip() for s in (existing_skills + normalized_skills) if s})
+                            candidate.skills_json = merged
+                            db.commit()
+
         # Store in MongoDB
         mongo_db = get_mongo_db()
         resume_doc = {

@@ -10,6 +10,12 @@ from sqlalchemy import func, and_, or_
 from database.models import Job, Candidate, Application, Evaluation, ApplicationStatus
 from database.schemas import JobResponse, CandidateResponse, EvaluationResponse
 from student_engine import CampusConnectStudentEngine
+from config import USE_LLM_FEEDBACK, USE_LLM_CHAT
+from llm.student_feedback import (
+    generate_resume_feedback_llm,
+    interpret_rejection_llm,
+)
+from llm.intent_router import classify_hr_intent, classify_student_intent
 
 
 class IntentClassifier:
@@ -1133,8 +1139,14 @@ class ChatOrchestrator:
         Returns:
             Tuple of (response_text, data_dict)
         """
-        # Classify intent
-        intent, params = self.intent_classifier.classify(message)
+        # Classify intent (LLM-first, regex fallback)
+        if USE_LLM_CHAT:
+            intent, params = classify_hr_intent(message)
+            # Basic safety: if LLM falls back to help with empty params, try regex
+            if intent == "help" and not params:
+                intent, params = self.intent_classifier.classify(message)
+        else:
+            intent, params = self.intent_classifier.classify(message)
         
         # Retrieve data based on intent
         data = None
@@ -1194,8 +1206,13 @@ class StudentChatOrchestrator:
         # Get student skills
         student_skills = self.get_student_skills()
         
-        # Classify intent
-        intent, params = self.intent_classifier.classify(message)
+        # Classify intent (LLM-first, regex fallback)
+        if USE_LLM_CHAT:
+            intent, params = classify_student_intent(message)
+            if intent == "help" and not params:
+                intent, params = self.intent_classifier.classify(message)
+        else:
+            intent, params = self.intent_classifier.classify(message)
         
         # Retrieve data based on intent
         data = None
@@ -1242,14 +1259,30 @@ class StudentChatOrchestrator:
                             # Analyze skill gap first
                             skill_gap = self.data_retriever.analyze_skill_gap_for_job(job_id, student_skills)
                             
-                            # Get resume feedback
-                            feedback = self.student_engine.get_resume_feedback(
-                                resume_text=resume_text,
-                                job_description=job.description or "",
-                                job_requirements=str(requirements),
-                                skill_gap_output=skill_gap or {}
-                            )
-                            data = feedback
+                            # Prefer LLM-based resume feedback when enabled
+                            if USE_LLM_FEEDBACK:
+                                feedback = generate_resume_feedback_llm(
+                                    resume_text=resume_text,
+                                    job_description=job.description or "",
+                                    job_requirements=str(requirements),
+                                    skill_gap_output=skill_gap or {},
+                                )
+                                if feedback:
+                                    data = feedback
+                                else:
+                                    data = self.student_engine.get_resume_feedback(
+                                        resume_text=resume_text,
+                                        job_description=job.description or "",
+                                        job_requirements=str(requirements),
+                                        skill_gap_output=skill_gap or {},
+                                    )
+                            else:
+                                data = self.student_engine.get_resume_feedback(
+                                    resume_text=resume_text,
+                                    job_description=job.description or "",
+                                    job_requirements=str(requirements),
+                                    skill_gap_output=skill_gap or {},
+                                )
                     else:
                         return "You need to upload a resume first to get feedback. Please upload your resume in your profile.", None
                 else:
@@ -1286,12 +1319,27 @@ class StudentChatOrchestrator:
                                 
                                 job = self.db.query(Job).filter(Job.id == job_id).first()
                                 
-                                interpretation = self.student_engine.interpret_rejection(
-                                    rejection_feedback=rejection_text,
-                                    job_title=job.title if job else "Unknown",
-                                    student_skills=student_skills
-                                )
-                                data = interpretation
+                                # Prefer LLM-based interpretation when enabled
+                                if USE_LLM_FEEDBACK:
+                                    interpretation = interpret_rejection_llm(
+                                        rejection_feedback=rejection_text,
+                                        job_title=job.title if job else "Unknown",
+                                        student_skills=student_skills,
+                                    )
+                                    if interpretation:
+                                        data = interpretation
+                                    else:
+                                        data = self.student_engine.interpret_rejection(
+                                            rejection_feedback=rejection_text,
+                                            job_title=job.title if job else "Unknown",
+                                            student_skills=student_skills,
+                                        )
+                                else:
+                                    data = self.student_engine.interpret_rejection(
+                                        rejection_feedback=rejection_text,
+                                        job_title=job.title if job else "Unknown",
+                                        student_skills=student_skills,
+                                    )
                         else:
                             return "I couldn't find detailed rejection feedback for this application. The rejection may not have been processed yet.", None
                     else:

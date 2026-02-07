@@ -68,4 +68,23 @@ JWT_SECRET_KEY: str = os.getenv(
 JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRATION_HOURS: int = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
 
+# LLM / Groq Configuration
+GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
+GROQ_MODEL: str = os.getenv("GROQ_MODEL", "mixtral-8x7b-32768")
 
+# Vector / Qdrant Configuration
+QDRANT_URL: str = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_API_KEY: Optional[str] = os.getenv("QDRANT_API_KEY")
+QDRANT_COLLECTION_JOBS: str = os.getenv("QDRANT_COLLECTION_JOBS", "jobs")
+QDRANT_COLLECTION_CANDIDATES: str = os.getenv("QDRANT_COLLECTION_CANDIDATES", "candidates")
+
+# Feature Flags
+USE_LLM_CHAT: bool = os.getenv("USE_LLM_CHAT", "false").lower() == "true"
+USE_LLM_FEEDBACK: bool = os.getenv("USE_LLM_FEEDBACK", "false").lower() == "true"
+USE_QDRANT_MATCHING: bool = os.getenv("USE_QDRANT_MATCHING", "false").lower() == "true"
+
+# Optional: resume enrichment & candidate skill auto-merge
+USE_LLM_RESUME_ENRICH: bool = os.getenv("USE_LLM_RESUME_ENRICH", "false").lower() == "true"
+USE_LLM_RESUME_ENRICH_UPDATE_CANDIDATE: bool = (
+    os.getenv("USE_LLM_RESUME_ENRICH_UPDATE_CANDIDATE", "false").lower() == "true"
+)

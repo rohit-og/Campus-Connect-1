@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
+
 from database.postgres import get_db
 from database.models import User, Job, Candidate, Application, Evaluation
 from database.schemas import (
@@ -14,6 +15,14 @@ from database.schemas import (
 )
 from student_engine import CampusConnectStudentEngine
 from auth.dependencies import get_current_active_user
+from config import USE_QDRANT_MATCHING, QDRANT_COLLECTION_JOBS, USE_LLM_FEEDBACK
+from vector.embedder import get_embedder
+from vector.qdrant_client import search as qdrant_search, ensure_collections
+from qdrant_client.http import models as qm
+from llm.student_feedback import (
+    generate_resume_feedback_llm,
+    interpret_rejection_llm,
+)
 
 router = APIRouter(prefix="/api/v1/student", tags=["Student"])
 
@@ -29,31 +38,86 @@ async def search_jobs(
 ):
     """Natural language job search"""
     try:
-        # Get all jobs from database
-        jobs = db.query(Job).all()
-        
-        # Convert to list of dicts for student engine
-        jobs_list = []
-        for job in jobs:
-            requirements = job.requirements_json or {}
-            jobs_list.append({
-                "id": job.id,
-                "title": job.title,
-                "company": job.company,
-                "location": job.location,
-                "salary": job.salary,
-                "description": job.description or "",
-                "requirements": requirements.get("job_description", "") or 
-                              f"{', '.join(requirements.get('required_skills', []))}"
-            })
-        
-        # Search jobs using student engine
-        results = student_engine.search_jobs(
-            student_query=request.query,
-            jobs=jobs_list,
-            student_skills=request.student_skills,
-            top_k=request.top_k
-        )
+        # If Qdrant matching is disabled, fall back to existing in-memory search
+        if not USE_QDRANT_MATCHING:
+            jobs = db.query(Job).all()
+
+            jobs_list = []
+            for job in jobs:
+                requirements = job.requirements_json or {}
+                jobs_list.append({
+                    "id": job.id,
+                    "title": job.title,
+                    "company": job.company,
+                    "location": job.location,
+                    "salary": job.salary,
+                    "description": job.description or "",
+                    "requirements": requirements.get("job_description", "") or
+                                  f"{', '.join(requirements.get('required_skills', []))}"
+                })
+
+            results = student_engine.search_jobs(
+                student_query=request.query,
+                jobs=jobs_list,
+                student_skills=request.student_skills,
+                top_k=request.top_k
+            )
+        else:
+            # Qdrant-backed semantic search
+            embedder = get_embedder()
+            ensure_collections(embedder.dimension)
+            query_vec = embedder.embed_text(request.query)
+
+            scored_points = qdrant_search(
+                collection=QDRANT_COLLECTION_JOBS,
+                query_vector=query_vec,
+                top_k=request.top_k,
+                filter_=None,
+            )
+
+            if not scored_points:
+                return []
+
+            # Fetch corresponding jobs from DB
+            job_ids = [int(point.payload.get("job_id")) for point in scored_points if point.payload.get("job_id") is not None]
+            if not job_ids:
+                return []
+
+            jobs = db.query(Job).filter(Job.id.in_(job_ids)).all()
+            jobs_by_id = {job.id: job for job in jobs}
+
+            # Rebuild job dicts in the order of Qdrant scores
+            jobs_list = []
+            for point in scored_points:
+                job_id = point.payload.get("job_id")
+                if job_id is None:
+                    continue
+                job = jobs_by_id.get(int(job_id))
+                if not job:
+                    continue
+
+                requirements = job.requirements_json or {}
+                jobs_list.append({
+                    "id": job.id,
+                    "title": job.title,
+                    "company": job.company,
+                    "location": job.location,
+                    "salary": job.salary,
+                    "description": job.description or "",
+                    "requirements": requirements.get("job_description", "") or
+                                  f"{', '.join(requirements.get('required_skills', []))}"
+                })
+
+            if not jobs_list:
+                return []
+
+            # Reuse existing job matching logic to determine application status
+            results = student_engine.search_jobs(
+                student_query=request.query,
+                jobs=jobs_list,
+                student_skills=request.student_skills,
+                top_k=request.top_k
+            )
         
         # Convert to response format
         response_list = []
@@ -110,14 +174,24 @@ async def get_resume_feedback(
 ):
     """Get resume feedback for ATS optimization"""
     try:
-        result = student_engine.get_resume_feedback(
+        # Prefer LLM-based feedback when enabled and configured
+        if USE_LLM_FEEDBACK:
+            llm_result = generate_resume_feedback_llm(
+                resume_text=request.resume_text,
+                job_description=request.job_description,
+                job_requirements=request.job_requirements,
+                skill_gap_output=request.skill_gap_output,
+            )
+            if llm_result:
+                return llm_result
+
+        # Fallback to deterministic engine
+        return student_engine.get_resume_feedback(
             resume_text=request.resume_text,
             job_description=request.job_description,
             job_requirements=request.job_requirements,
-            skill_gap_output=request.skill_gap_output
+            skill_gap_output=request.skill_gap_output,
         )
-        
-        return result
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -133,12 +207,22 @@ async def interpret_rejection(
 ):
     """Interpret rejection feedback"""
     try:
+        # Prefer LLM-based interpretation when enabled
+        if USE_LLM_FEEDBACK:
+            llm_result = interpret_rejection_llm(
+                rejection_feedback=request.rejection_feedback,
+                job_title=request.job_title,
+                student_skills=request.student_skills,
+            )
+            if llm_result:
+                return RejectionInterpretResponse(**llm_result)
+
+        # Fallback to deterministic interpreter
         result = student_engine.interpret_rejection(
             rejection_feedback=request.rejection_feedback,
             job_title=request.job_title,
-            student_skills=request.student_skills
+            student_skills=request.student_skills,
         )
-        
         return RejectionInterpretResponse(**result)
     except Exception as e:
         raise HTTPException(

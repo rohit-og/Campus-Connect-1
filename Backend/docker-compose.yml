@@ -1,0 +1,136 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: campus_connect_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: campus_connect
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - campus_connect_network
+
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: campus_connect_mongodb
+    environment:
+      MONGO_INITDB_DATABASE: campus_connect
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - campus_connect_network
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: campus_connect_qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:6333/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - campus_connect_network
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: campus_connect_backend
+    environment:
+      # API Configuration
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      API_RELOAD: "true"
+
+      # Database URLs (using service names for Docker networking)
+      POSTGRES_URL: postgresql://postgres:postgres@postgres:5432/campus_connect
+      MONGODB_URL: mongodb://mongodb:27017/
+      MONGODB_DB_NAME: campus_connect
+
+      # Qdrant Configuration
+      QDRANT_URL: http://qdrant:6333
+
+      # Upload Configuration
+      UPLOAD_DIR: uploads
+      MAX_UPLOAD_SIZE: 10485760
+
+      # JWT Configuration (change in production!)
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRATION_HOURS: 24
+
+      # Logging
+      LOG_LEVEL: INFO
+
+      # Feature Flags
+      USE_LLM_CHAT: "false"
+      USE_LLM_FEEDBACK: "false"
+      USE_QDRANT_MATCHING: "false"
+      USE_LLM_RESUME_ENRICH: "false"
+      USE_LLM_RESUME_ENRICH_UPDATE_CANDIDATE: "false"
+
+      # LLM Configuration (load from .env file or environment)
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-mixtral-8x7b-32768}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount code for hot-reload in development
+      - .:/app
+      # Persist uploads directory
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - campus_connect_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  qdrant_data:
+  uploads_data:
+
+networks:
+  campus_connect_network:
+    driver: bridge

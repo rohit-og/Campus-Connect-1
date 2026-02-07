@@ -62,6 +62,16 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 The API will be available at `http://localhost:8000`
 
+### Hackathon demo data
+
+From the `Backend` directory (with dependencies installed), run:
+
+```bash
+python seed_database.py
+```
+
+This seeds students, jobs, applications, evaluations, TPO, mentors, events, prep modules, aptitude test, badges, conversations, and placements. Login credentials are printed at the end. For **AI Skill Matchmaking** (semantic job search), an admin must call `POST /api/v1/vector/reindex/jobs` after seeding (see [DOCKER_SETUP.md](DOCKER_SETUP.md#hackathon-demo-data) for details).
+
 ### API Documentation
 
 Once the server is running, you can access:

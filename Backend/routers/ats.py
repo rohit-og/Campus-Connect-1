@@ -213,6 +213,17 @@ def create_evaluation_for_application(application: Application, db: Session) -> 
         db.add(evaluation)
         db.commit()
         db.refresh(evaluation)
+        # Persist ATS result to MongoDB so feedback/generate can use it
+        try:
+            result_doc = {
+                "evaluation_id": evaluation.id,
+                "ats_result": ats_result,
+                "resume_data": getattr(resume_data, "model_dump", resume_data.dict)(),
+                "job_requirement": getattr(job_requirement, "model_dump", job_requirement.dict)(),
+            }
+            mongo_db.ats_results.insert_one(result_doc)
+        except Exception:
+            pass  # Do not fail evaluation creation if MongoDB write fails
         if evaluation.passed:
             from routers.badges import try_award_badges_for_passed_evaluation
             try_award_badges_for_passed_evaluation(
@@ -352,6 +363,17 @@ async def create_evaluation(
         db.add(evaluation)
         db.commit()
         db.refresh(evaluation)
+        # Persist ATS result to MongoDB so feedback/generate can use it
+        try:
+            result_doc = {
+                "evaluation_id": evaluation.id,
+                "ats_result": ats_result,
+                "resume_data": getattr(resume_data, "model_dump", resume_data.dict)(),
+                "job_requirement": getattr(job_requirement, "model_dump", job_requirement.dict)(),
+            }
+            mongo_db.ats_results.insert_one(result_doc)
+        except Exception:
+            pass  # Do not fail evaluation creation if MongoDB write fails
         if evaluation.passed:
             from routers.badges import try_award_badges_for_passed_evaluation
             try_award_badges_for_passed_evaluation(

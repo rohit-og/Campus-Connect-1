@@ -196,6 +196,34 @@ Run Alembic migrations inside the container:
 docker-compose exec backend alembic upgrade head
 ```
 
+### Hackathon demo data
+
+To populate the database with demo data for all modules (students, jobs, applications, evaluations, TPO, mentors, events, prep modules, aptitude test, badges, conversations, verification, placements):
+
+**Inside Docker:**
+
+```bash
+docker-compose exec backend python seed_database.py
+```
+
+**On host (from Backend directory, with venv active):**
+
+```bash
+cd Backend
+python seed_database.py
+```
+
+The script prints login credentials at the end (students, recruiter, TPO, mentors). Use these to log in and demo Student Dashboard, TPO Dashboard, HR Dashboard, Mentorship, Events, Prep, Aptitude, Badges, and Company messaging.
+
+**AI Skill Matchmaking (semantic job search):** After seeding (or whenever jobs change), reindex jobs into Qdrant so that `POST /api/v1/student/jobs/search` uses vector search. An **admin** user must call:
+
+```http
+POST /api/v1/vector/reindex/jobs
+Authorization: Bearer <admin_jwt>
+```
+
+If you do not have an admin user, create one (e.g. register or insert a user with `role=admin`), then call this endpoint once. Until reindex is run, job search may use the non-Qdrant fallback if configured.
+
 ### Adding Dependencies
 
 1. Add to `requirements.txt`
@@ -206,6 +234,26 @@ docker-compose exec backend alembic upgrade head
    ```
 
 ## Troubleshooting
+
+### Alembic / migrations
+
+Use the migration command **without** a leading hyphen:
+
+- **Inside Docker (recommended):**
+  ```bash
+  docker-compose exec backend alembic upgrade head
+  ```
+- **On host (from Backend directory):**
+  ```bash
+  cd Backend
+  alembic upgrade head
+  ```
+  If `alembic` is not on your PATH, use:
+  ```bash
+  python -m alembic upgrade head
+  ```
+
+Migrations are idempotent: safe to run multiple times even if some tables already exist.
 
 ### Port already in use
 

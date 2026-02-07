@@ -93,10 +93,22 @@ async def get_test(
     }
 
 
-def _get_candidate(user_id: int, db: Session) -> Candidate:
-    c = db.query(Candidate).filter(Candidate.user_id == user_id).first()
-    if not c:
-        raise HTTPException(status_code=400, detail="Candidate profile required to take tests")
+def _get_candidate(current_user: User, db: Session) -> Candidate:
+    """Get candidate for current user; create a minimal one if missing (e.g. TPO/recruiter taking test for demo)."""
+    c = db.query(Candidate).filter(Candidate.user_id == current_user.id).first()
+    if c:
+        return c
+    # No candidate profile (e.g. logged in as TPO, recruiter, or student not yet in candidates table)
+    name = current_user.email.split("@")[0].replace(".", " ").title()
+    c = Candidate(
+        user_id=current_user.id,
+        name=name or "User",
+        email=current_user.email,
+        skills_json=[],
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
     return c
 
 
@@ -107,7 +119,7 @@ async def start_attempt(
     current_user: User = Depends(get_current_active_user),
 ):
     """Start an attempt; returns attempt id and questions (without correct answers)."""
-    candidate = _get_candidate(current_user.id, db)
+    candidate = _get_candidate(current_user, db)
     t = db.query(AptitudeTest).filter(AptitudeTest.id == test_id, AptitudeTest.is_active == True).first()
     if not t:
         raise HTTPException(status_code=404, detail="Test not found")
@@ -147,7 +159,7 @@ async def submit_attempt(
     current_user: User = Depends(get_current_active_user),
 ):
     """Submit answers and get score."""
-    candidate = _get_candidate(current_user.id, db)
+    candidate = _get_candidate(current_user, db)
     attempt = db.query(TestAttempt).filter(
         TestAttempt.id == attempt_id,
         TestAttempt.candidate_id == candidate.id,
@@ -186,7 +198,7 @@ async def my_attempts(
     current_user: User = Depends(get_current_active_user),
 ):
     """List current user's attempts."""
-    candidate = _get_candidate(current_user.id, db)
+    candidate = _get_candidate(current_user, db)
     attempts = (
         db.query(TestAttempt)
         .filter(TestAttempt.candidate_id == candidate.id)

@@ -113,7 +113,17 @@ export default function AttemptPage() {
               </p>
             </div>
           </div>
-          <Link href="/student/aptitude" className="btn btn-primary">Back to Aptitude</Link>
+          <div className="flex gap-2">
+            {attemptId && (
+              <Link
+                href={`/student/aptitude/attempts/${attemptId}/results`}
+                className="btn btn-primary"
+              >
+                View detailed results
+              </Link>
+            )}
+            <Link href="/student/aptitude" className="btn btn-ghost">Back to Aptitude</Link>
+          </div>
         </div>
       </ProtectedRoute>
     );

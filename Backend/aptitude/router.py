@@ -9,7 +9,8 @@ from typing import List
 from .services import AptitudeService
 from .schemas import (
     TestStartResponse, TestSubmissionRequest, TestSubmissionResponse,
-    LeaderboardResponse, StudentRankResponse
+    LeaderboardResponse, StudentRankResponse,
+    DetailedTestResultsResponse
 )
 
 # Try to import database dependency from existing module
@@ -203,3 +204,40 @@ async def get_my_rank(
     result = service.get_student_rank_info(test_id, user_id)
     
     return StudentRankResponse(**result)
+
+
+@router.get(
+    "/attempts/{attempt_id}/detailed-results",
+    response_model=DetailedTestResultsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get detailed test results",
+    description="Returns question-by-question breakdown showing correct/incorrect answers"
+)
+async def get_detailed_results(
+    attempt_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get detailed results for a submitted test attempt
+
+    Shows for each question:
+    - Question text and options
+    - Student's selected answer
+    - Correct answer
+    - Whether it was right/wrong
+    - Difficulty level
+
+    **Authorization:** Only the student who took the test can view their results
+    """
+    user_id = current_user.get("id") or current_user.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User ID not found in token"
+        )
+
+    service = AptitudeService(db)
+    result = service.get_detailed_results(attempt_id, user_id)
+
+    return DetailedTestResultsResponse(**result)

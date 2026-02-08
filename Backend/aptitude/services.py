@@ -316,3 +316,99 @@ class AptitudeService:
             "total_participants": len(all_attempts),
             "submitted_at": student_attempt.submitted_at
         }
+
+    def get_detailed_results(self, attempt_id: int, user_id: int) -> Dict:
+        """
+        Get detailed results for a test attempt showing all questions with answers
+
+        Args:
+            attempt_id: Test attempt ID
+            user_id: User ID (for authorization)
+
+        Returns:
+            Dictionary with detailed results including question-by-question breakdown
+        """
+        # Get attempt with authorization check
+        attempt = self.db.query(AptitudeAttempt).filter(
+            AptitudeAttempt.id == attempt_id,
+            AptitudeAttempt.user_id == user_id
+        ).first()
+
+        if not attempt:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attempt not found or access denied"
+            )
+
+        if not attempt.submitted_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Test has not been submitted yet"
+            )
+
+        # Get test details
+        test = self.get_test(attempt.test_id)
+
+        # Get all questions for this test
+        questions = self.db.query(AptitudeQuestion).filter(
+            AptitudeQuestion.test_id == attempt.test_id
+        ).all()
+
+        # Get all responses for this attempt
+        responses = self.db.query(AptitudeResponse).filter(
+            AptitudeResponse.attempt_id == attempt_id
+        ).all()
+
+        # Create a mapping of question_id -> response
+        response_map = {r.question_id: r for r in responses}
+
+        # Build detailed question results
+        question_results = []
+        correct_count = 0
+        incorrect_count = 0
+        skipped_count = 0
+
+        for question in questions:
+            response = response_map.get(question.id)
+
+            if response:
+                selected_option = response.selected_option
+                is_correct = response.is_correct
+
+                if is_correct:
+                    correct_count += 1
+                else:
+                    incorrect_count += 1
+            else:
+                # Question was skipped (no response)
+                selected_option = None
+                is_correct = False
+                skipped_count += 1
+
+            question_results.append({
+                "question_id": question.id,
+                "question_text": question.question_text,
+                "option_a": question.option_a,
+                "option_b": question.option_b,
+                "option_c": question.option_c,
+                "option_d": question.option_d,
+                "correct_option": question.correct_option,
+                "selected_option": selected_option,
+                "is_correct": is_correct,
+                "difficulty_level": question.difficulty_level.value
+            })
+
+        return {
+            "attempt_id": attempt.id,
+            "test_id": attempt.test_id,
+            "test_title": test.title,
+            "user_id": attempt.user_id,
+            "score": attempt.score,
+            "total_questions": len(questions),
+            "correct_answers": correct_count,
+            "incorrect_answers": incorrect_count,
+            "skipped_questions": skipped_count,
+            "time_taken": attempt.time_taken or 0,
+            "submitted_at": attempt.submitted_at,
+            "questions": question_results
+        }

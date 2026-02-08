@@ -84,13 +84,21 @@ export default function AptitudePage() {
               <h2 className="card-title text-lg">My Attempts</h2>
               <ul className="space-y-2">
                 {attempts.slice(0, 5).map((a) => (
-                  <li key={a.id} className="flex justify-between items-center">
+                  <li key={a.id} className="flex justify-between items-center flex-wrap gap-2">
                     <span>{a.test_title ?? `Test #${a.id}`}</span>
-                    {a.score != null && (
-                      <span className={a.passed ? 'text-success' : 'text-base-content/70'}>
-                        {a.score.toFixed(0)}% {a.passed ? 'Passed' : ''}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {a.score != null && (
+                        <span className={a.passed ? 'text-success' : 'text-base-content/70'}>
+                          {a.score.toFixed(0)}% {a.passed ? 'Passed' : ''}
+                        </span>
+                      )}
+                      <Link
+                        href={`/student/aptitude/attempts/${a.id}/results`}
+                        className="btn btn-ghost btn-sm"
+                      >
+                        View details
+                      </Link>
+                    </div>
                   </li>
                 ))}
               </ul>

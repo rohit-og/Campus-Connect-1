@@ -191,6 +191,35 @@ export const jobsApi = {
   },
 };
 
+// Aptitude API – detailed results types
+export interface QuestionResultDetail {
+  question_id: number;
+  question_text: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  correct_option: string;
+  selected_option: string | null;
+  is_correct: boolean;
+  difficulty_level: string;
+}
+
+export interface DetailedTestResultsResponse {
+  attempt_id: number;
+  test_id: number;
+  test_title: string;
+  user_id: number;
+  score: number;
+  total_questions: number;
+  correct_answers: number;
+  incorrect_answers: number;
+  skipped_questions: number;
+  time_taken: number;
+  submitted_at: string;
+  questions: QuestionResultDetail[];
+}
+
 // Aptitude API
 export const aptitudeApi = {
   listTests: async (): Promise<{ id: number; title: string; description?: string; duration_minutes: number; question_count: number }[]> =>
@@ -215,6 +244,8 @@ export const aptitudeApi = {
   }),
   myAttempts: async (): Promise<{ id: number; test_id: number; test_title?: string; started_at?: string; submitted_at?: string; score?: number; passed?: boolean }[]> =>
     apiRequest('/api/v1/aptitude/attempts/me'),
+  getDetailedResults: async (attemptId: number): Promise<DetailedTestResultsResponse> =>
+    apiRequest<DetailedTestResultsResponse>(`/api/v1/aptitude/attempts/${attemptId}/detailed-results`),
 };
 
 // Student API

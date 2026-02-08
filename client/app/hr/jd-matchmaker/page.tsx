@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Users, Loader2, CheckCircle, Sparkles } from 'lucide-react';
+import { FileText, Users, Loader2, CheckCircle, Sparkles, Scale } from 'lucide-react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { jobLlmApi, recruiterLlmApi, jobsApi, candidatesApi } from '@/lib/api';
-import { Job, Candidate } from '@/types/api';
+import { jobLlmApi, recruiterLlmApi, jobsApi, candidatesApi, jdAnalyzerApi } from '@/lib/api';
+import { Job, Candidate, JDAnalyzerResponse } from '@/types/api';
 import { handleApiError } from '@/lib/errors';
 import Link from 'next/link';
 
@@ -31,6 +31,18 @@ export default function JDMatchmakerPage() {
   const [loadingSummaryFor, setLoadingSummaryFor] = useState<number | null>(null);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
+
+  // Resume vs JD (skill gap) state
+  const [availableJds, setAvailableJds] = useState<string[]>([]);
+  const [resumeVsJdResumeText, setResumeVsJdResumeText] = useState('');
+  const [resumeVsJdResumeId, setResumeVsJdResumeId] = useState('');
+  const [resumeVsJdInputMode, setResumeVsJdInputMode] = useState<'text' | 'id'>('text');
+  const [resumeVsJdJdName, setResumeVsJdJdName] = useState('');
+  const [resumeVsJdJdText, setResumeVsJdJdText] = useState('');
+  const [resumeVsJdUseCustomJd, setResumeVsJdUseCustomJd] = useState(false);
+  const [jdAnalyzeResult, setJdAnalyzeResult] = useState<JDAnalyzerResponse | null>(null);
+  const [jdAnalyzeLoading, setJdAnalyzeLoading] = useState(false);
+  const [jdAnalyzeError, setJdAnalyzeError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -58,6 +70,35 @@ export default function JDMatchmakerPage() {
       .catch(() => setCandidates([]))
       .finally(() => setCandidatesLoading(false));
   }, [selectedJobId]);
+
+  useEffect(() => {
+    jdAnalyzerApi.getJds()
+      .then((r) => setAvailableJds(r.available_jds || []))
+      .catch(() => setAvailableJds([]));
+  }, []);
+
+  const handleResumeVsJdAnalyze = async () => {
+    const hasResume = resumeVsJdInputMode === 'text' ? resumeVsJdResumeText.trim() : resumeVsJdResumeId.trim();
+    const hasJd = resumeVsJdUseCustomJd ? resumeVsJdJdText.trim() : resumeVsJdJdName;
+    if (!hasResume || !hasJd) {
+      setJdAnalyzeError('Provide resume (text or ID) and a job description (predefined or custom).');
+      return;
+    }
+    setJdAnalyzeLoading(true);
+    setJdAnalyzeError(null);
+    setJdAnalyzeResult(null);
+    try {
+      const result = await jdAnalyzerApi.analyze({
+        ...(resumeVsJdInputMode === 'text' ? { resume_text: resumeVsJdResumeText.trim() } : { resume_id: resumeVsJdResumeId.trim() }),
+        ...(resumeVsJdUseCustomJd ? { jd_text: resumeVsJdJdText.trim() } : { jd_name: resumeVsJdJdName }),
+      });
+      setJdAnalyzeResult(result);
+    } catch (e) {
+      setJdAnalyzeError(handleApiError(e));
+    } finally {
+      setJdAnalyzeLoading(false);
+    }
+  };
 
   const handleExtract = async () => {
     if (!jdText.trim()) return;
@@ -170,6 +211,171 @@ export default function JDMatchmakerPage() {
                   <CheckCircle className="w-4 h-4 mr-2" />
                   Create job from this
                 </Link>
+              </div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Resume vs JD (skill gap) */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.15 }}
+          className="card bg-base-100 shadow-lg"
+        >
+          <div className="card-body">
+            <h2 className="card-title text-xl text-base-content flex items-center gap-2">
+              <Scale className="w-5 h-5" />
+              Resume vs JD
+            </h2>
+            <p className="text-sm text-base-content/70">Analyze a resume against a job description to see skill match and missing skills.</p>
+
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Resume source</span>
+              </label>
+              <div className="flex gap-2 mb-2">
+                <button
+                  type="button"
+                  className={`btn btn-sm ${resumeVsJdInputMode === 'text' ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setResumeVsJdInputMode('text')}
+                >
+                  Paste text
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${resumeVsJdInputMode === 'id' ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setResumeVsJdInputMode('id')}
+                >
+                  Resume ID
+                </button>
+              </div>
+              {resumeVsJdInputMode === 'text' ? (
+                <textarea
+                  className="textarea textarea-bordered w-full h-28 text-sm"
+                  placeholder="Paste resume text here..."
+                  value={resumeVsJdResumeText}
+                  onChange={(e) => setResumeVsJdResumeText(e.target.value)}
+                />
+              ) : (
+                <input
+                  type="text"
+                  className="input input-bordered w-full"
+                  placeholder="Enter resume ID (from MongoDB)"
+                  value={resumeVsJdResumeId}
+                  onChange={(e) => setResumeVsJdResumeId(e.target.value)}
+                />
+              )}
+            </div>
+
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text">Job description</span>
+              </label>
+              <div className="flex gap-2 mb-2">
+                <button
+                  type="button"
+                  className={`btn btn-sm ${!resumeVsJdUseCustomJd ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setResumeVsJdUseCustomJd(false)}
+                >
+                  Predefined JD
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${resumeVsJdUseCustomJd ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setResumeVsJdUseCustomJd(true)}
+                >
+                  Custom JD text
+                </button>
+              </div>
+              {!resumeVsJdUseCustomJd ? (
+                <select
+                  className="select select-bordered w-full"
+                  value={resumeVsJdJdName}
+                  onChange={(e) => setResumeVsJdJdName(e.target.value)}
+                >
+                  <option value="">Select a job description</option>
+                  {availableJds.map((name) => (
+                    <option key={name} value={name}>{name.replace(/_/g, ' ')}</option>
+                  ))}
+                </select>
+              ) : (
+                <textarea
+                  className="textarea textarea-bordered w-full h-28 text-sm"
+                  placeholder="Paste job description text..."
+                  value={resumeVsJdJdText}
+                  onChange={(e) => setResumeVsJdJdText(e.target.value)}
+                />
+              )}
+            </div>
+
+            <div className="flex gap-2 flex-wrap">
+              <button
+                className="btn btn-primary"
+                disabled={jdAnalyzeLoading}
+                onClick={handleResumeVsJdAnalyze}
+              >
+                {jdAnalyzeLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Scale className="w-5 h-5" />
+                )}
+                {jdAnalyzeLoading ? ' Analyzing...' : ' Analyze'}
+              </button>
+            </div>
+
+            {jdAnalyzeError && (
+              <div className="alert alert-error">
+                <span>{jdAnalyzeError}</span>
+                <button type="button" onClick={() => setJdAnalyzeError(null)} className="btn btn-sm btn-ghost">Dismiss</button>
+              </div>
+            )}
+
+            {jdAnalyzeResult && (
+              <div className="mt-4 p-4 bg-base-200 rounded-lg space-y-4">
+                <h3 className="font-semibold text-base-content">Skill gap analysis</h3>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-base-content/70">Match:</span>
+                  <span className={`text-2xl font-bold ${jdAnalyzeResult.analysis.match_percentage >= 60 ? 'text-success' : jdAnalyzeResult.analysis.match_percentage >= 40 ? 'text-warning' : 'text-error'}`}>
+                    {jdAnalyzeResult.analysis.match_percentage.toFixed(1)}%
+                  </span>
+                  <span className="text-sm text-base-content/60">
+                    ({jdAnalyzeResult.analysis.summary.matching_skills_count} of {jdAnalyzeResult.analysis.summary.total_jd_skills} JD skills found)
+                  </span>
+                </div>
+                {jdAnalyzeResult.analysis.matching_skills.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-base-content/80 mb-1">Matching skills</p>
+                    <div className="flex flex-wrap gap-2">
+                      {jdAnalyzeResult.analysis.matching_skills.map((s) => (
+                        <span key={s} className="badge badge-success">{s}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {jdAnalyzeResult.analysis.missing_skills.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-base-content/80 mb-1">Missing skills</p>
+                    <div className="flex flex-wrap gap-2">
+                      {jdAnalyzeResult.analysis.missing_skills.map((s) => (
+                        <span key={s} className="badge badge-error">{s}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {Object.keys(jdAnalyzeResult.analysis.missing_skills_by_category || {}).length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-base-content/80 mb-1">Missing by category</p>
+                    <ul className="list-disc list-inside space-y-1 text-sm">
+                      {Object.entries(jdAnalyzeResult.analysis.missing_skills_by_category).map(([cat, skills]) => (
+                        <li key={cat}>
+                          <span className="font-medium">{cat}:</span>{' '}
+                          {skills.join(', ')}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>

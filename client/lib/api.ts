@@ -1,4 +1,4 @@
-import { Token, User, ApiError, Job, JobCreate, JobSearchResponse, ATSScoreRequest, ATSScoreResponse, EvaluationResponse, BatchScoreRequest, BatchScoreResponse, Candidate, ChatMessageRequest, ChatMessageResponse, StudentApplication, Badge, CandidateBadge, PrepModule, MentorProfile, MentorshipRequest, Event, EventRegistration, Conversation, Message } from '@/types/api';
+import { Token, User, ApiError, Job, JobCreate, JobSearchResponse, ATSScoreRequest, ATSScoreResponse, EvaluationResponse, BatchScoreRequest, BatchScoreResponse, Candidate, ChatMessageRequest, ChatMessageResponse, StudentApplication, Badge, CandidateBadge, PrepModule, MentorProfile, MentorshipRequest, Event, EventRegistration, Conversation, Message, JDAnalyzerResponse, JDAnalyzeRequest } from '@/types/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -290,6 +290,20 @@ export const atsApi = {
     return apiRequest<EvaluationResponse>('/api/v1/ats/create-evaluation', {
       method: 'POST',
       body: JSON.stringify({ candidate_id: candidateId, job_id: jobId }),
+    });
+  },
+};
+
+// JD Analyzer API
+export const jdAnalyzerApi = {
+  getJds: async (): Promise<{ available_jds: string[]; message?: string }> => {
+    return apiRequest<{ available_jds: string[]; message?: string }>('/api/v1/jd-analyzer/jds');
+  },
+
+  analyze: async (params: JDAnalyzeRequest): Promise<JDAnalyzerResponse> => {
+    return apiRequest<JDAnalyzerResponse>('/api/v1/jd-analyzer/analyze', {
+      method: 'POST',
+      body: JSON.stringify(params),
     });
   },
 };

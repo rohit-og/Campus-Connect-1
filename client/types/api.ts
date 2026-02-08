@@ -267,6 +267,35 @@ export interface BatchScoreResponse {
   total: number;
 }
 
+// JD Analyzer Types
+export interface JDAnalyzerSummary {
+  total_jd_skills: number;
+  resume_skills_count: number;
+  matching_skills_count: number;
+  missing_skills_count: number;
+}
+
+export interface JDAnalyzerResponse {
+  jd_name?: string;
+  filename?: string;
+  analysis: {
+    resume_skills: string[];
+    jd_required_skills: string[];
+    matching_skills: string[];
+    missing_skills: string[];
+    missing_skills_by_category: Record<string, string[]>;
+    match_percentage: number;
+    summary: JDAnalyzerSummary;
+  };
+}
+
+export interface JDAnalyzeRequest {
+  resume_text?: string;
+  resume_id?: string;
+  jd_name?: string;
+  jd_text?: string;
+}
+
 // Chat Types
 export interface ChatMessageRequest {
   message: string;

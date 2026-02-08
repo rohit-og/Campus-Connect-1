@@ -104,8 +104,8 @@ services:
       USE_LLM_RESUME_ENRICH_UPDATE_CANDIDATE: "false"
 
       # LLM Configuration (load from .env file or environment)
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
-      GROQ_MODEL: ${GROQ_MODEL:-mixtral-8x7b-32768}
+      GROQ_API_KEY: "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"
+      GROQ_MODEL: "llama-3.1-8b-instant"
       QDRANT_API_KEY: ${QDRANT_API_KEY:-}
     ports:
       - "8000:8000"
